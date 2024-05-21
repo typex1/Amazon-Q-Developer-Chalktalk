@@ -1,0 +1,68 @@
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  TextApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub
+        - ${ResourceName} From Stack ${AWS::StackName}
+        - ResourceName: TextApi
+      StageName: Prod
+      DefinitionBody:
+        openapi: '3.0'
+        info: {}
+        paths:
+          /:
+            put:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TextFunction.Arn}/invocations
+              responses: {}
+      EndpointConfiguration: REGIONAL
+      TracingEnabled: true
+      Cors:
+        MaxAge: 5
+  TextFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}
+        - ResourceName: TextFunction
+      CodeUri: src/TextFunction
+      Handler: handler.handler
+      Runtime: python3.10
+      MemorySize: 3008
+      Timeout: 30
+      Tracing: Active
+      Events:
+        TextApiPUT:
+          Type: Api
+          Properties:
+            Path: /
+            Method: PUT
+            RestApiId: !Ref TextApi
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TextTable
+          TEXTTABLE_TABLE_ARN: !GetAtt TextTable.Arn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TextTable
+        - arn:aws:iam::aws:policy/ComprehendReadOnly
+  TextFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${TextFunction}
+  TextTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
